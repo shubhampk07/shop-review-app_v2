@@ -1,12 +1,10 @@
 import streamlit as st
-import fitz  # PyMuPDF
-import pytesseract
-from PIL import Image
+from pdfminer.high_level import extract_text as pdfminer_extract_text
 import pandas as pd
 import re
 import io
-from typing import Dict, List, Tuple, Optional
-import numpy as np
+from typing import Dict, List
+import numpy as np  # (you can remove later if unused)
 
 # Configure page
 st.set_page_config(page_title="Shop Drawing Review Tool", layout="wide")
@@ -14,88 +12,37 @@ st.title("📐 Shop Drawing Review Tool")
 st.write("Upload structural and shop drawings to compare member sizes and identify discrepancies.")
 
 class PDFProcessor:
-    """Handles PDF text extraction with OCR fallback"""
-    
+    """Handles PDF text extraction (no OCR, Cloud-friendly)"""
+
     def __init__(self):
         self.text_content = ""
         self.extraction_method = ""
-    
+
     def extract_text_from_pdf(self, pdf_file, page_range=None) -> str:
-        """Extract text from PDF, with OCR fallback if needed"""
+        """Extract text from PDF using pdfminer.six (no OCR)."""
         try:
-            # Reset file pointer
             pdf_file.seek(0)
             pdf_bytes = pdf_file.read()
-            
-            # Try direct text extraction first
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            text = ""
-            
-            # Handle page range if specified
-            if page_range:
-                start_page, end_page = page_range
-                pages_to_process = range(start_page, min(end_page + 1, len(doc)))
-            else:
-                pages_to_process = range(len(doc))
-            
-            for page_num in pages_to_process:
-                page = doc.load_page(page_num)
-                page_text = page.get_text()
-                text += page_text + "\n"
-            
-            doc.close()
-            
-            # Check if we got meaningful text
-            if len(text.strip()) > 100 and self._has_meaningful_content(text):
-                self.extraction_method = "Direct PDF text extraction"
-                return text
-            else:
-                # Fall back to OCR
-                return self._extract_with_ocr(pdf_bytes, page_range)
-                
+
+            # pdfminer works with file-like objects too
+            text = pdfminer_extract_text(io.BytesIO(pdf_bytes))
+
+            self.extraction_method = "Direct PDF text extraction (pdfminer.six)"
+            return text or ""
         except Exception as e:
             st.error(f"Error processing PDF: {str(e)}")
             return ""
-    
+
     def _has_meaningful_content(self, text: str) -> bool:
         """Check if extracted text contains meaningful Australian structural drawing content"""
-        keywords = ['ub', 'uc', 'wb', 'shs', 'rhs', 'chs', 'pfc', 'ua', 'ea', 'angle', 'channel', 
-                   'beam', 'column', 'member', 'size', 'steel', 'section', 'mm', 'metre', 'meter',
-                   'tfb', 'wc', 'bt', 'flat', 'plate']
+        keywords = [
+            'ub', 'uc', 'wb', 'shs', 'rhs', 'chs', 'pfc', 'ua', 'ea', 'angle', 'channel',
+            'beam', 'column', 'member', 'size', 'steel', 'section', 'mm', 'metre', 'meter',
+            'tfb', 'wc', 'bt', 'flat', 'plate'
+        ]
         text_lower = text.lower()
         return any(keyword in text_lower for keyword in keywords)
-    
-    def _extract_with_ocr(self, pdf_bytes: bytes, page_range=None) -> str:
-        """Extract text using OCR"""
-        try:
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            text = ""
-            
-            # Handle page range if specified
-            if page_range:
-                start_page, end_page = page_range
-                pages_to_process = range(start_page, min(end_page + 1, len(doc)))
-            else:
-                pages_to_process = range(len(doc))
-            
-            for page_num in pages_to_process:
-                page = doc.load_page(page_num)
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))  # 2x resolution for better OCR
-                img_data = pix.tobytes("png")
-                img = Image.open(io.BytesIO(img_data))
-                
-                # Use pytesseract for OCR
-                page_text = pytesseract.image_to_string(img, config='--psm 6')
-                text += page_text + "\n"
-            
-            doc.close()
-            self.extraction_method = "OCR text extraction"
-            return text
-            
-        except Exception as e:
-            st.error(f"OCR extraction failed: {str(e)}")
-            self.extraction_method = "Extraction failed"
-            return ""
+
 
 class MemberParser:
     """Parses and normalizes Australian steel member designations"""
@@ -541,12 +488,12 @@ with st.expander("📖 How to Use"):
 st.sidebar.markdown("""
 ### Required Packages:
 ```
-streamlit
-PyMuPDF
-pytesseract
-Pillow
-pandas
-numpy
+streamlit==1.36.0
+pdfminer.six==20240706
+Pillow==10.4.0
+pandas==2.2.2
+numpy==1.26.4
+
 ```
 
 **Note**: For OCR functionality, you'll need tesseract installed on your system.
